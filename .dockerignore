@@ -1,0 +1,29 @@
+# Control de versiones
+.git
+.github
+.gitignore
+
+# Config local (se genera en runtime desde env vars)
+config.php
+
+# Archivos subidos por usuarios (volumen en producción)
+uploads/*
+!uploads/.gitkeep
+
+# Docker (excluir archivos de orquestación pero NO el entrypoint)
+.env
+.env.*
+!.env.example
+docker-compose*.yml
+Caddyfile
+
+# Dependencias de desarrollo
+plugins/vendor/
+plugins/composer.lock
+
+# Logs locales
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

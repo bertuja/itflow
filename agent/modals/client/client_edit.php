@@ -19,6 +19,7 @@ $client_rate = floatval($row['client_rate']);
 $client_notes = nullable_htmlentities($row['client_notes']);
 $client_created_at = nullable_htmlentities($row['client_created_at']);
 $client_archived_at = nullable_htmlentities($row['client_archived_at']);
+$client_zoho_account_id = nullable_htmlentities($row['client_zoho_account_id'] ?? '');
 
 // Client Tags
 $client_tag_id_array = array();
@@ -154,6 +155,19 @@ ob_start();
                                value="<?php echo $client_website; ?>">
                     </div>
                 </div>
+
+                <?php if (!empty($config_zoho_client_id)): ?>
+                <div class="form-group">
+                    <label>Zoho Account ID <small class="text-muted">(for Zoho Desk integration)</small></label>
+                    <div class="input-group">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text"><i class="fa fa-fw fa-headset"></i></span>
+                        </div>
+                        <input type="text" class="form-control" name="zoho_account_id" placeholder="e.g. 642643000000274676" maxlength="100"
+                               value="<?php echo $client_zoho_account_id; ?>">
+                    </div>
+                </div>
+                <?php endif; ?>
 
                 <div class="form-group">
                     <label>Tags</label>

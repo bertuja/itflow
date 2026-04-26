@@ -11,6 +11,14 @@ DEFINE("CURRENT_DATABASE_VERSION", $row['config_current_database_version']);
 $config_azure_client_id = $row['config_azure_client_id'];
 $config_azure_client_secret = $row['config_azure_client_secret'];
 
+// Zoho Desk Integration
+$config_zoho_client_id = $row['config_zoho_client_id'] ?? null;
+$config_zoho_client_secret = $row['config_zoho_client_secret'] ?? null;
+$config_zoho_refresh_token = $row['config_zoho_refresh_token'] ?? null;
+$config_zoho_org_id = $row['config_zoho_org_id'] ?? null;
+$config_zoho_access_token = $row['config_zoho_access_token'] ?? null;
+$config_zoho_access_token_expires_at = $row['config_zoho_access_token_expires_at'] ?? null;
+
 // Mail - SMTP
 $config_smtp_provider = $row['config_smtp_provider'];
 $config_smtp_host = $row['config_smtp_host'];

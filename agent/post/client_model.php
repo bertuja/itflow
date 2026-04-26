@@ -14,3 +14,4 @@ if (empty($abbreviation)) {
 }
 $notes = cleanInput($_POST['notes'] ?? '');
 $lead = intval($_POST['lead'] ?? 0);
+$zoho_account_id = cleanInput($_POST['zoho_account_id'] ?? '');

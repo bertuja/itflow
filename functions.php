@@ -2073,3 +2073,49 @@ function formatDuration($time) {
 
     return implode(' ', $parts);
 }
+
+/**
+ * Returns a valid Zoho Desk access token, refreshing it from the DB if expired.
+ */
+function getZohoAccessToken($mysqli) {
+    $sql = mysqli_query($mysqli, "SELECT config_zoho_client_id, config_zoho_client_secret, config_zoho_refresh_token, config_zoho_access_token, config_zoho_access_token_expires_at FROM settings WHERE company_id = 1");
+    $row = mysqli_fetch_assoc($sql);
+
+    if (empty($row['config_zoho_client_id']) || empty($row['config_zoho_refresh_token'])) {
+        return null;
+    }
+
+    // Return cached token if still valid (5 min buffer)
+    if (!empty($row['config_zoho_access_token']) && !empty($row['config_zoho_access_token_expires_at'])) {
+        if (strtotime($row['config_zoho_access_token_expires_at']) > time() + 300) {
+            return $row['config_zoho_access_token'];
+        }
+    }
+
+    // Refresh the token via Zoho OAuth
+    $ch = curl_init('https://accounts.zoho.com/oauth/v2/token');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query([
+            'grant_type'    => 'refresh_token',
+            'client_id'     => $row['config_zoho_client_id'],
+            'client_secret' => $row['config_zoho_client_secret'],
+            'refresh_token' => $row['config_zoho_refresh_token'],
+        ]),
+    ]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $data = json_decode($response, true);
+    if (empty($data['access_token'])) {
+        return null;
+    }
+
+    $access_token = mysqli_real_escape_string($mysqli, $data['access_token']);
+    $expires_at   = date('Y-m-d H:i:s', time() + intval($data['expires_in'] ?? 3600));
+
+    mysqli_query($mysqli, "UPDATE settings SET config_zoho_access_token = '$access_token', config_zoho_access_token_expires_at = '$expires_at' WHERE company_id = 1");
+
+    return $data['access_token'];
+}

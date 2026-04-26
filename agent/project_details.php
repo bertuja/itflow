@@ -159,6 +159,24 @@ if (isset($_GET['project_id'])) {
     // The user names in a comma-separated string
     $ticket_collaborators = nullable_htmlentities($row['user_names']);
 
+    // Project Tasks (Kanban)
+    $sql_project_tasks = mysqli_query($mysqli,
+        "SELECT pt.*, u.user_name AS assignee_name FROM project_tasks pt
+        LEFT JOIN users u ON pt.project_task_assigned_to = u.user_id
+        WHERE pt.project_task_project_id = $project_id
+        ORDER BY pt.project_task_status ASC, pt.project_task_order ASC"
+    );
+    $pt_all = [];
+    while ($pt_row = mysqli_fetch_assoc($sql_project_tasks)) {
+        $pt_all[$pt_row['project_task_status']][] = $pt_row;
+    }
+    $pt_todo        = $pt_all['todo']        ?? [];
+    $pt_in_progress = $pt_all['in_progress'] ?? [];
+    $pt_done        = $pt_all['done']        ?? [];
+    $pt_total       = count($pt_todo) + count($pt_in_progress) + count($pt_done);
+    $pt_done_count  = count($pt_done);
+    $pt_done_pct    = $pt_total > 0 ? round(($pt_done_count / $pt_total) * 100) : 0;
+
     ?>
 
 <!-- Breadcrumbs-->
@@ -184,9 +202,13 @@ if (isset($_GET['project_id'])) {
                             <i class="fas fa-fw fa-plus mr-2"></i>New
                         </button>
                         <div class="dropdown-menu">
+                            <a class="dropdown-item text-dark ajax-modal" href="#" data-modal-url="modals/project/project_task_add.php?project_id=<?= $project_id ?>">
+                                <i class="fa fa-fw fa-tasks mr-2"></i>Tarea
+                            </a>
+                            <div class="dropdown-divider"></div>
                             <a class="dropdown-item text-dark ajax-modal" href="#" data-modal-url="modals/ticket/ticket_add.php?<?= $client_url ?>&project_id=<?= $project_id ?>" data-modal-size="lg">
-                            <i class="fa fa-fw fa-life-ring mr-2"></i>Ticket
-                        </a>
+                                <i class="fa fa-fw fa-life-ring mr-2"></i>Ticket
+                            </a>
                         </div>
                     </div>
                     <div class="dropdown">
@@ -257,24 +279,126 @@ if (isset($_GET['project_id'])) {
     </div>
 
     <div class="card card-body">
-        <?php if ($ticket_count) { ?>
-            <div class="progress" style="height: 20px;">
-                <i class="fa fas fa-fw fa-life-ring mr-2"></i>
-                <div class="progress-bar bg-primary" style="width: <?php echo $tickets_closed_percent; ?>%;"><?php echo $closed_ticket_count; ?> / <?php echo $ticket_count; ?></div>
+        <?php if ($pt_total > 0) { ?>
+            <div class="d-flex align-items-center mb-1">
+                <i class="fas fa-fw fa-tasks mr-2 text-secondary"></i>
+                <div class="progress flex-grow-1" style="height:18px;" title="Tareas: <?= $pt_done_count ?>/<?= $pt_total ?>">
+                    <div class="progress-bar bg-success" style="width:<?= $pt_done_pct ?>%;"><?= $pt_done_count ?>/<?= $pt_total ?></div>
+                </div>
             </div>
         <?php } ?>
-        <?php if ($task_count) { ?>
-            <div class="progress mt-2" style="height: 20px;">
-                <i class="fa fas fa-fw fa-tasks mr-2"></i>
-                <div class="progress-bar bg-secondary" style="width: <?php echo $tasks_completed_percent; ?>%;"><?php echo $completed_task_count; ?> / <?php echo $task_count; ?></div>
+        <?php if ($ticket_count) { ?>
+            <div class="d-flex align-items-center mb-1">
+                <i class="fas fa-fw fa-life-ring mr-2 text-secondary"></i>
+                <div class="progress flex-grow-1" style="height:18px;" title="Tickets cerrados: <?= $closed_ticket_count ?>/<?= $ticket_count ?>">
+                    <div class="progress-bar bg-primary" style="width:<?= $tickets_closed_percent ?>%;"><?= $closed_ticket_count ?>/<?= $ticket_count ?></div>
+                </div>
             </div>
         <?php } ?>
         <?php if ($ticket_collaborators) { ?>
-            <div class=mt-1>
+            <div class="mt-1">
                 <i class="fas fa-fw fa-users mr-2 text-secondary"></i><?php echo $ticket_collaborators; ?>
             </div>
         <?php } ?>
     </div>
+</div>
+
+<?php
+// ── KANBAN BOARD ────────────────────────────────────────────────
+$priority_badges = [
+    'urgent' => '<span class="badge badge-danger">Urgente</span>',
+    'high'   => '<span class="badge badge-warning">Alta</span>',
+    'medium' => '<span class="badge badge-info">Media</span>',
+    'low'    => '<span class="badge badge-secondary">Baja</span>',
+];
+$priority_icons = [
+    'urgent' => 'text-danger',
+    'high'   => 'text-warning',
+    'medium' => 'text-info',
+    'low'    => 'text-secondary',
+];
+
+function render_kanban_column($tasks, $status, $label, $project_id, $session_csrf, $priority_badges, $priority_icons, $project_completed_at) {
+    $count = count($tasks);
+    $col_colors = ['todo' => 'secondary', 'in_progress' => 'warning', 'done' => 'success'];
+    $col_color  = $col_colors[$status] ?? 'secondary';
+    ?>
+    <div class="col-md-4">
+        <div class="card card-outline card-<?= $col_color ?> mb-3">
+            <div class="card-header py-2 d-flex align-items-center">
+                <h6 class="card-title mb-0 flex-grow-1">
+                    <?= $label ?>
+                    <?php if ($count): ?>
+                        <span class="badge badge-<?= $col_color ?> ml-1"><?= $count ?></span>
+                    <?php endif; ?>
+                </h6>
+                <?php if (empty($project_completed_at)): ?>
+                <a href="#" class="btn btn-xs btn-outline-secondary ajax-modal"
+                   data-modal-url="modals/project/project_task_add.php?project_id=<?= $project_id ?>&status=<?= $status ?>"
+                   title="Agregar tarea">
+                    <i class="fas fa-plus"></i>
+                </a>
+                <?php endif; ?>
+            </div>
+            <div class="card-body p-2 kanban-column" data-status="<?= $status ?>" style="min-height:120px;">
+                <?php foreach ($tasks as $pt):
+                    $tid      = intval($pt['project_task_id']);
+                    $tname    = htmlspecialchars($pt['project_task_name'], ENT_QUOTES);
+                    $tdesc    = htmlspecialchars($pt['project_task_description'] ?? '', ENT_QUOTES);
+                    $tprio    = $pt['project_task_priority'];
+                    $tdue     = $pt['project_task_due'];
+                    $tassign  = htmlspecialchars($pt['assignee_name'] ?? '', ENT_QUOTES);
+                    $overdue  = $tdue && $tdue < date('Y-m-d') && $pt['project_task_status'] !== 'done';
+                ?>
+                <div class="kanban-card card mb-2 shadow-sm" data-task-id="<?= $tid ?>" style="cursor:grab;">
+                    <div class="card-body p-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="font-weight-bold" style="font-size:.9rem;"><?= $tname ?></span>
+                            <?php if (empty($project_completed_at)): ?>
+                            <a href="#" class="ml-2 text-muted ajax-modal flex-shrink-0"
+                               data-modal-url="modals/project/project_task_edit.php?id=<?= $tid ?>"
+                               title="Editar">
+                                <i class="fas fa-pen fa-xs"></i>
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                        <?php if ($tdesc): ?>
+                            <div class="text-muted small mt-1" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;"><?= $tdesc ?></div>
+                        <?php endif; ?>
+                        <div class="d-flex align-items-center mt-2" style="gap:.4rem;flex-wrap:wrap;">
+                            <?= $priority_badges[$tprio] ?? '' ?>
+                            <?php if ($tassign): ?>
+                                <span class="badge badge-light border"><i class="fas fa-user fa-xs mr-1"></i><?= $tassign ?></span>
+                            <?php endif; ?>
+                            <?php if ($tdue): ?>
+                                <span class="badge <?= $overdue ? 'badge-danger' : 'badge-light border' ?>">
+                                    <i class="fas fa-calendar fa-xs mr-1"></i><?= $tdue ?>
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (empty($project_completed_at)): ?>
+            <div class="card-footer p-1">
+                <a href="#" class="btn btn-block btn-xs btn-outline-secondary ajax-modal"
+                   data-modal-url="modals/project/project_task_add.php?project_id=<?= $project_id ?>&status=<?= $status ?>">
+                    <i class="fas fa-plus mr-1"></i>Agregar tarea
+                </a>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php
+}
+?>
+
+<!-- Kanban Board -->
+<div class="row mb-2" id="kanban-board">
+    <?php render_kanban_column($pt_todo,        'todo',        'Por hacer',   $project_id, $_SESSION['csrf_token'], $priority_badges, $priority_icons, $project_completed_at); ?>
+    <?php render_kanban_column($pt_in_progress, 'in_progress', 'En progreso', $project_id, $_SESSION['csrf_token'], $priority_badges, $priority_icons, $project_completed_at); ?>
+    <?php render_kanban_column($pt_done,        'done',        'Hecho',       $project_id, $_SESSION['csrf_token'], $priority_badges, $priority_icons, $project_completed_at); ?>
 </div>
 
 <div class="row">
@@ -554,3 +678,35 @@ require_once "../includes/footer.php";
 
 <script src="../js/bulk_actions.js"></script>
 <script src="../js/pretty_content.js"></script>
+<script src="../plugins/SortableJS/Sortable.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var columns = document.querySelectorAll('.kanban-column');
+    columns.forEach(function (col) {
+        Sortable.create(col, {
+            group: 'kanban',
+            animation: 150,
+            ghostClass: 'bg-light',
+            dragClass: 'shadow',
+            handle: '.kanban-card',
+            onEnd: function (evt) {
+                var taskId   = evt.item.dataset.taskId;
+                var newStatus = evt.to.dataset.status;
+                var newOrder  = evt.newIndex;
+
+                fetch('post.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({
+                        move_project_task: '1',
+                        task_id:   taskId,
+                        new_status: newStatus,
+                        new_order:  newOrder,
+                        csrf_token: '<?= $_SESSION['csrf_token'] ?>'
+                    })
+                });
+            }
+        });
+    });
+});
+</script>

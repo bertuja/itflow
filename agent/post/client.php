@@ -275,12 +275,13 @@ if (isset($_POST['edit_client'])) {
         client_tax_id_number = ?,
         client_lead = ?,
         client_abbreviation = ?,
-        client_notes = ?
+        client_notes = ?,
+        client_zoho_account_id = ?
         WHERE client_id = ?"
     );
     mysqli_stmt_bind_param(
         $query,
-        "ssssdisiisi",
+        "ssssdisisssi",
         $name,
         $type,
         $website,
@@ -291,6 +292,7 @@ if (isset($_POST['edit_client'])) {
         $lead,
         $abbreviation,
         $notes,
+        $zoho_account_id,
         $client_id
     );
     mysqli_stmt_execute($query);

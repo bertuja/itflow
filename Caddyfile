@@ -1,0 +1,20 @@
+# Reemplazar con tu dominio real, ej: itflow.dbyte.com.ar
+{$APP_URL} {
+    reverse_proxy app:80
+
+    # Cabeceras de seguridad
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    # Logs
+    log {
+        output file /data/logs/access.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}

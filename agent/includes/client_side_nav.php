@@ -82,6 +82,15 @@
                         </a>
                     </li>
 
+                    <?php if (!empty($config_zoho_client_id)): ?>
+                    <li class="nav-item">
+                        <a href="/agent/zoho_tickets.php?client_id=<?php echo $client_id; ?>" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "zoho_tickets.php") { echo "active"; } ?>">
+                            <i class="nav-icon fas fa-headset"></i>
+                            <p>Zoho Tickets</p>
+                        </a>
+                    </li>
+                    <?php endif; ?>
+
                     <li class="nav-item">
                         <a href="/agent/projects.php?client_id=<?php echo $client_id; ?>" class="nav-link <?php if (basename($_SERVER["PHP_SELF"]) == "projects.php" || basename($_SERVER["PHP_SELF"]) == "project_details.php") { echo "active"; } ?>">
                             <i class="nav-icon fas fa-project-diagram"></i>

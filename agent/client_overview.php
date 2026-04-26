@@ -798,6 +798,94 @@ $sql_asset_retired = mysqli_query(
 
     <?php } ?>
 
+    <?php if (!empty($config_zoho_client_id) && !empty($client_zoho_account_id)): ?>
+
+        <!-- Zoho Desk Tickets -->
+        <?php
+        $zoho_token = getZohoAccessToken($mysqli);
+        $zoho_open_tickets = [];
+
+        if ($zoho_token) {
+            $z_org = $config_zoho_org_id ?: '758029195';
+            $z_ch  = curl_init("https://desk.zoho.com/api/v1/accounts/" . urlencode($client_zoho_account_id) . "/tickets?limit=50&sortBy=-createdTime&include=contacts,assignee");
+            curl_setopt_array($z_ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ["Authorization: Zoho-oauthtoken $zoho_token", "orgId: $z_org"],
+            ]);
+            $z_data = json_decode(curl_exec($z_ch), true);
+            curl_close($z_ch);
+
+            $closed_statuses = ['Closed','Cerrado','Cerrado Automáticamente','Resuelto','Resolved'];
+            foreach ($z_data['data'] ?? [] as $zt) {
+                if (!in_array($zt['status'] ?? '', $closed_statuses)) {
+                    $zoho_open_tickets[] = $zt;
+                }
+            }
+        }
+
+        $z_status_badges = [
+            'Open'=>'badge-primary','Abierto'=>'badge-primary',
+            'Listo para Iniciar'=>'badge-info','En proceso'=>'badge-warning',
+            'Esperando respuesta cliente'=>'badge-secondary',
+            'Para Retirar o Entregar'=>'badge-secondary','Proyecto'=>'badge-purple',
+        ];
+        ?>
+
+        <div class="col-md-4">
+            <div class="card card-dark mb-3">
+                <div class="card-header p-2">
+                    <h5 class="card-title">
+                        <i class="fas fa-fw fa-headset mr-2"></i>Zoho Tickets
+                        <?php if (!empty($zoho_open_tickets)): ?>
+                            <span class="badge badge-danger ml-1"><?php echo count($zoho_open_tickets); ?></span>
+                        <?php endif; ?>
+                    </h5>
+                    <div class="card-tools">
+                        <a href="zoho_tickets.php?client_id=<?php echo $client_id; ?>" class="btn btn-xs btn-outline-secondary">Ver todos</a>
+                    </div>
+                </div>
+
+                <?php if (!$zoho_token): ?>
+                    <div class="card-body p-2 text-muted small">Error al conectar con Zoho.</div>
+                <?php elseif (empty($zoho_open_tickets)): ?>
+                    <div class="card-body p-2 text-muted small"><i class="fas fa-check-circle mr-1 text-success"></i>Sin tickets abiertos.</div>
+                <?php else: ?>
+                    <table class="table table-sm table-hover mb-0">
+                        <tbody>
+                        <?php foreach (array_slice($zoho_open_tickets, 0, 5) as $zt):
+                            $z_tid    = htmlspecialchars($zt['id'] ?? '', ENT_QUOTES);
+                            $z_tnum   = intval($zt['ticketNumber']);
+                            $z_subj   = htmlspecialchars($zt['subject'] ?? '(Sin asunto)', ENT_QUOTES);
+                            $z_status = $zt['status'] ?? '';
+                            $z_badge  = $z_status_badges[$z_status] ?? 'badge-secondary';
+                            $z_age    = timeAgo($zt['createdTime'] ?? '');
+                            $z_url    = urlencode($zt['webUrl'] ?? '');
+                            $z_modal  = "modals/zoho/ticket_detail.php?ticket_id={$z_tid}&ticket_num={$z_tnum}&web_url={$z_url}";
+                        ?>
+                        <tr class="ajax-modal" data-modal-url="<?php echo $z_modal; ?>" data-modal-size="lg" style="cursor:pointer;">
+                            <td class="text-monospace text-muted text-nowrap" style="width:1%">#<?php echo $z_tnum; ?></td>
+                            <td><?php echo $z_subj; ?></td>
+                            <td class="text-nowrap"><span class="badge <?php echo $z_badge; ?> badge-sm"><?php echo htmlspecialchars($z_status, ENT_QUOTES); ?></span></td>
+                            <td class="text-muted text-nowrap small"><?php echo $z_age; ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php if (count($zoho_open_tickets) > 5): ?>
+                        <tr>
+                            <td colspan="4" class="text-center p-1">
+                                <a href="zoho_tickets.php?client_id=<?php echo $client_id; ?>" class="small text-muted">
+                                    + <?php echo count($zoho_open_tickets) - 5; ?> más
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+        </div>
+
+    <?php endif; ?>
+
 </div>
 
 <!-- Include script to get TOTP code via the login ID -->

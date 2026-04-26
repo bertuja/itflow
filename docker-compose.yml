@@ -1,0 +1,89 @@
+services:
+
+  # -------------------------------------------------------------------------
+  # ITFlow PHP application (Apache + PHP 8.2)
+  # -------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME:-itflow}
+      APP_NAME: ${APP_NAME:-ITFlow}
+      APP_URL: ${APP_URL}
+      HTTPS_ONLY: "FALSE"          # Caddy termina SSL; Apache recibe HTTP interno
+      SETUP_ENABLED: ${SETUP_ENABLED:-1}
+      INSTALLATION_ID: ${INSTALLATION_ID:-}
+    volumes:
+      # Config persiste entre reinicios para que el setup wizard pueda escribir
+      - config_data:/var/www/html/config.php
+      # Archivos subidos por usuarios
+      - uploads_data:/var/www/html/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------------
+  # MySQL 8
+  # -------------------------------------------------------------------------
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-itflow}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS}
+    volumes:
+      - db_data:/var/lib/mysql
+      # Carga el schema en la primera inicialización
+      - ./db.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASS}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------------
+  # Caddy — reverse proxy con SSL automático Let's Encrypt
+  # -------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - internal
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  db_data:
+  uploads_data:
+  config_data:
+  caddy_data:
+  caddy_config:
+
+# ---------------------------------------------------------------------------
+# Networks
+# ---------------------------------------------------------------------------
+networks:
+  internal:
+    driver: bridge
