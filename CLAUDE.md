@@ -144,46 +144,80 @@ Production runs on **AWS ECS Fargate** (cluster `itflow-prod`, container `itflow
 
 **GitHub fork:** `https://github.com/bertuja/itflow` (remote alias: `dbyte`). The upstream is `itflow-org/itflow` (remote alias: `origin`). Always push DBYTE changes to `dbyte` remote, never to `origin`.
 
+### Persistencia crítica — leer antes de cualquier deploy
+
+`config.php` **no está en la imagen Docker** (excluido por `.dockerignore`). En cada arranque, `docker-entrypoint.sh` lo restaura desde el **EFS volume** (`/var/www/html/config-volume/config.php`). Esto garantiza que `installation_id`, las claves de cifrado de credenciales y el MFA sean siempre consistentes.
+
+**Nunca borres `/var/www/html/config-volume/config.php` del EFS** — hacerlo rompe el MFA y todas las credenciales cifradas de todos los usuarios.
+
+Si por algún motivo el EFS estuviera vacío, el entrypoint genera `config.php` desde las env vars de la task definition (`:4`), con `INSTALLATION_ID=a0f2802bffa2c8724a19d63c85c4d41d` fijo.
+
 ### Deploy completo (build → ECR → ECS)
 
 ```bash
-# 1. Login ECR
+cd "/Users/bertuja/Proyectos 2026/DBYTE/itflow"
+
+# 1. Commit y push a GitHub
+git add <archivos> && git commit -m "DBYTE: descripción"
+git push dbyte master
+
+# 2. Login ECR
 aws ecr get-login-password --region us-east-1 --profile dbytesrl | \
   docker login --username AWS --password-stdin 686100069131.dkr.ecr.us-east-1.amazonaws.com
 
-# 2. Build (mac M-series → linux/amd64 para Fargate)
+# 3. Build (mac M-series → linux/amd64 para Fargate)
 docker build --platform linux/amd64 \
-  -t 686100069131.dkr.ecr.us-east-1.amazonaws.com/itflow-prod:latest \
-  "/Users/bertuja/Proyectos 2026/DBYTE/itflow"
+  -t 686100069131.dkr.ecr.us-east-1.amazonaws.com/itflow-prod:latest .
 
-# 3. Push
+# 4. Push
 docker push 686100069131.dkr.ecr.us-east-1.amazonaws.com/itflow-prod:latest
 
-# 4. Force redeploy ECS
+# 5. Force redeploy (task definition actual: itflow-prod:4)
 aws ecs update-service --profile dbytesrl --region us-east-1 \
   --cluster itflow-prod --service itflow-prod --force-new-deployment
 ```
 
+El servicio tiene `minimumHealthyPercent=100` — levanta el nuevo container antes de parar el viejo (zero downtime).
+
 ### Hotfix rápido (sin redeploy de imagen)
 
-Para cambios urgentes directamente en el container en ejecución:
+Para cambios urgentes directamente en el container en ejecución. Los cambios se pierden al próximo redeploy — siempre hacer el deploy completo después.
+
 ```bash
-B64=$(base64 -i script.php)
+# Obtener task ARN actual
+TASK=$(aws ecs list-tasks --profile dbytesrl --region us-east-1 \
+  --cluster itflow-prod --query 'taskArns[0]' --output text)
+
+# Subir un archivo (evita problemas de quoting con scripts largos)
+B64=$(base64 -i /ruta/local/archivo.php)
 aws ecs execute-command --profile dbytesrl --region us-east-1 \
-  --cluster itflow-prod --task <task-arn> --container itflow --interactive \
-  --command "sh -c 'echo $B64 | base64 -d > /var/www/html/path/file.php && echo OK'"
+  --cluster itflow-prod --task $TASK --container itflow --interactive \
+  --command "sh -c 'echo ${B64} | base64 -d > /var/www/html/ruta/archivo.php && echo OK'"
 ```
 
-Obtener el task-arn actual:
+El execute-command solo funciona en tasks iniciados con `enableExecuteCommand=true`. El servicio ya lo tiene configurado (task def `:4`). Tasks lanzados manualmente con `run-task` sin el flag no lo soportan.
+
+### Diagnóstico de errores 500
+
 ```bash
-aws ecs list-tasks --profile dbytesrl --region us-east-1 --cluster itflow-prod --query 'taskArns[0]' --output text
+# Ver errores PHP en tiempo real
+aws logs filter-log-events --profile dbytesrl --region us-east-1 \
+  --log-group-name "/ecs/itflow-prod" \
+  --filter-pattern "PHP" --limit 20 \
+  --query 'events[*].message' --output text
+
+# Ver requests 500 recientes
+aws logs filter-log-events --profile dbytesrl --region us-east-1 \
+  --log-group-name "/ecs/itflow-prod" \
+  --filter-pattern "500" --limit 10 \
+  --query 'events[*].message' --output text
 ```
 
 ### Schema migrations
 
 No hay migration runner. Para agregar columnas:
 ```php
-// Verificar si existe antes de agregar (MySQL no soporta IF NOT EXISTS en ALTER TABLE)
+// MySQL en RDS no soporta IF NOT EXISTS en ALTER TABLE — verificar manualmente
 $r = $mysqli->query("SELECT COUNT(*) as c FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='tabla' AND COLUMN_NAME='columna'");
 if ($r->fetch_assoc()['c'] == 0) {
@@ -191,7 +225,11 @@ if ($r->fetch_assoc()['c'] == 0) {
 }
 ```
 
-**MySQL on RDS es MySQL (no MariaDB)** — `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` no está soportado.
+### Bugs conocidos y reglas de codificación
+
+- **`logAction()` y comillas simples:** nunca envolver variables con `'...'` en el mensaje de logAction — las comillas se insertan literal en SQL y rompen la query. Usar `: ` o concatenación sin comillas.
+- **Form actions en modales:** usar `post.php` (sin `../`). Los form actions se resuelven relativos a la URL del browser, no del archivo modal. Desde `agent/project_details.php`, `post.php` resuelve a `agent/post.php` correctamente.
+- **Consultas de usuarios:** usar `user_role_id > 1` (no `user_role`) y `user_status = 1` al listar agentes.
 
 ## DBYTE Customizations
 
