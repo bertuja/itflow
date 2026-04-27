@@ -32,7 +32,7 @@ if (isset($_POST['add_project_task'])) {
         project_task_created_by  = $session_user_id"
     );
 
-    logAction("Project Task", "Create", "$session_name added task '$name' to project $project_id");
+    logAction("Project Task", "Create", "$session_name added task to project $project_id");
     flash_alert("Task added");
     redirect();
 }
@@ -73,7 +73,7 @@ if (isset($_POST['edit_project_task'])) {
         WHERE project_task_id = $task_id"
     );
 
-    logAction("Project Task", "Edit", "$session_name edited task $task_id");
+    logAction("Project Task", "Edit", "$session_name edited project task $task_id");
     flash_alert("Task updated");
     redirect();
 }

@@ -2,17 +2,29 @@
 set -e
 
 CONFIG=/var/www/html/config.php
+CONFIG_VOLUME=/var/www/html/config-volume/config.php
 
 # ---------------------------------------------------------------------------
-# Generate config.php from environment variables.
-# Only created on first run (file absent). On subsequent starts the persisted
-# volume copy is used so setup-wizard changes (enable_setup=0, etc.) survive.
+# config.php persistence strategy (priority order):
+#   1. EFS volume copy (config-volume/config.php) — survives all redeploys
+#   2. Generate from environment variables — first-run only
+# This guarantees installation_id, MFA secrets and credential encryption
+# remain consistent across every deploy.
 # ---------------------------------------------------------------------------
-if [ ! -f "$CONFIG" ]; then
+if [ -f "$CONFIG_VOLUME" ]; then
+    echo "[entrypoint] Restoring config.php from EFS volume..."
+    cp "$CONFIG_VOLUME" "$CONFIG"
+    chown www-data:www-data "$CONFIG"
+    chmod 640 "$CONFIG"
+    echo "[entrypoint] config.php restored from EFS."
+elif [ ! -f "$CONFIG" ]; then
     echo "[entrypoint] Generating config.php from environment variables..."
 
-    # Random installation ID if not provided
-    INSTALLATION_ID="${INSTALLATION_ID:-$(openssl rand -hex 16)}"
+    # INSTALLATION_ID must be fixed — if not set, warn loudly
+    if [ -z "$INSTALLATION_ID" ]; then
+        echo "[entrypoint] WARNING: INSTALLATION_ID not set. Generating random ID — MFA and encryption will break on next redeploy!"
+        INSTALLATION_ID="$(openssl rand -hex 16)"
+    fi
 
     cat > "$CONFIG" <<EOF
 <?php
@@ -28,14 +40,16 @@ if [ ! -f "$CONFIG" ]; then
 \$config_app_name      = '${APP_NAME:-ITFlow}';
 \$config_base_url      = '${APP_URL:?APP_URL is required}';
 \$config_https_only    = ${HTTPS_ONLY:-FALSE};
-\$config_enable_setup  = ${SETUP_ENABLED:-1};
+\$config_enable_setup  = ${SETUP_ENABLED:-0};
 \$repo_branch          = 'master';
 \$installation_id      = '${INSTALLATION_ID}';
 EOF
 
     chown www-data:www-data "$CONFIG"
     chmod 640 "$CONFIG"
-    echo "[entrypoint] config.php created."
+    # Persist to EFS immediately so future containers use this copy
+    cp "$CONFIG" "$CONFIG_VOLUME" 2>/dev/null || true
+    echo "[entrypoint] config.php created and saved to EFS volume."
 else
     echo "[entrypoint] config.php already exists — skipping generation."
 fi

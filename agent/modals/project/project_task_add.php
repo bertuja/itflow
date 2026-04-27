@@ -15,7 +15,7 @@ ob_start();
     <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
 </div>
 
-<form action="../post.php" method="post">
+<form action="post.php" method="post">
     <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
     <input type="hidden" name="project_id" value="<?= $project_id ?>">
 
